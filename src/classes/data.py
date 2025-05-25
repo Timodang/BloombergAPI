@@ -1,7 +1,6 @@
 from datetime import datetime
 import pandas as pd
 from pandas import read_excel
-from pandas.core.interchange.dataframe_protocol import DataFrame
 
 from src.classes.blp import BLP
 from src.classes.utilitaire import Utils
@@ -63,8 +62,8 @@ class Data:
         # A voir, alignement pour les dates
 
         # Lag des données comptables (décalage entre date associée à la valeur et date de publication), 21 jours par défaut
-        df_prices_to_keep: pd.DataFrame = df_prices.iloc[0:df_prices.shape[0]-21,]
-        df_fundamental_to_keep: pd.DataFrame = df_fundamental.iloc[21:df_fundamental.shape[0],]
+        df_prices_to_keep: pd.DataFrame = df_prices.iloc[21:df_prices.shape[0],]
+        df_fundamental_to_keep: pd.DataFrame = df_fundamental.iloc[0 :df_fundamental.shape[0] - 21,]
 
         # Calcul du price-to-book
         df_price_to_book: pd.DataFrame = df_prices_to_keep / df_fundamental_to_keep
