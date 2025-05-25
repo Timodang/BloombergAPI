@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
+from dateutil.relativedelta import relativedelta
 from pyarrow import list_
 
 
@@ -53,6 +54,9 @@ class Utils:
         # Vérification sur les dates
         if start_date > end_date:
             raise Exception("La date de début ne peut pas être postérieure à la date de fin.")
+
+        if end_date > datetime.now().replace(hour = 0, minute=0, second=0):
+            raise Exception("La date de fin ne peut pas être postérieure à la date d'aujourd'hui")
 
         # Liste pour stocker le calendrier
         list_dates: list = [start_date]
@@ -115,6 +119,59 @@ class Utils:
         # Récupération  de la dernière date
         list_eom_dates.append(list_dates[-1])
         return list_eom_dates
+
+    @staticmethod
+    def get_lagged_calendar(list_date: list, nb_month:int)->list:
+        """
+        Méthode permettant de construire un calendrier laggé en ajoutant un nombre de mois
+        défini par l'utilisateur
+        :param list_date:
+        :param nb_month:
+        :return:
+        """
+
+        # Création d'une liste vide pour stocker les dates laggées
+        lagged_list_date: list = []
+
+        # Boucle pour appliquer le lag
+        for date in list_date:
+
+            # Récupération de la date en appliquant le lag
+            lagged_date: datetime = date + relativedelta(months=nb_month)
+
+            # Si ce n'est pas un jour ouvré, on prend le dernier jour ouvré associé
+            if lagged_date.weekday() == 5:
+                lagged_date -= timedelta(days=1)
+            elif lagged_date.weekday() == 6:
+                lagged_date -= timedelta(days=2)
+
+            # Ajout à la liste
+            lagged_list_date.append(lagged_date)
+
+        return lagged_list_date
+
+
+
+    @staticmethod
+    def get_last_date_week(list_dates: list)->list:
+        """
+        Méthode permettant de récupérer un jour ouvré par semaine
+        """
+
+        # Création d'une liste pour stocker les résultat
+        list_eow_dates: list = []
+
+        # Boucle sur les dates de la liste
+        for i in range(0, len(list_dates)):
+            new_date: datetime = list_dates[i]
+            # On récupère la date si c'est un vendredi
+            if new_date.weekday() == 4:
+                list_eow_dates.append(new_date)
+
+        return list_eow_dates
+
+
+
 
 
 
