@@ -1,7 +1,6 @@
 from datetime import datetime
 import pandas as pd
 from pandas import read_excel
-import datetime as dt
 
 from src.classes.blp import BLP
 from src.classes.utilitaire import Utils
@@ -40,12 +39,14 @@ class Data:
         self.sector: pd.DataFrame = pd.DataFrame()
         self.dict_metrics: dict = dict()
         self.df_valo: pd.DataFrame = pd.DataFrame()
+        self.rf: pd.DataFrame = pd.DataFrame()
+        self.df_prices: pd.DataFrame = pd.DataFrame()
 
         # Pour le mapping sectoriel
         self.dict_sector: dict = dict()
 
     @staticmethod
-    def _compute_valuation_metrics(str_metric: str) -> pd.DataFrame:
+    def _compute_valuation_metrics(str_metric: str) -> (pd.DataFrame, pd.DataFrame):
         """
         Méthode permettant de calculer plusieurs métriques de valorisation par date
         pour un ensemble de ticker : Book-to-price, ...
@@ -70,6 +71,12 @@ class Data:
         else:
             raise Exception("Pas de dataframe disponible")
 
+        # Passage des dates en indice
+        df_prices.set_index(df_prices["Unnamed: 0"], inplace=True)
+        df_prices.drop("Unnamed: 0", axis=1, inplace=True)
+        df_fundamental.set_index(df_fundamental["Unnamed: 0"], inplace=True)
+        df_fundamental.drop("Unnamed: 0", axis=1, inplace=True)
+
         # Test sur les dimensions
         if df_prices.shape[1] != df_fundamental.shape[1]:
             print("Les deux dataframe n'ont pas le même nombre d'actif")
@@ -89,7 +96,7 @@ class Data:
         # Calcul du price-to-book
         df_valo: pd.DataFrame = df_prices_to_keep / df_fundamental_to_keep
 
-        return df_valo
+        return df_valo, df_prices
 
 
     def import_all_data(self, metric:str):
@@ -122,11 +129,14 @@ class Data:
             # Cinquième étape : Récupération des métriques (prix, fondamentaux, ...) requis pour la stratégie et sauvegarde en excel
             self.dict_metrics: dict = self._get_company_metrics()
 
+            # Sixième étape : Récupération du taux sans risque
+            self.rf: pd.DataFrame = self._get_risk_free_rate()
+
             # Fermeture de la session bloomberg
             self.blp.closeSession()
 
-        # Calcul des métriques de valorisation
-        self.df_valo: pd.DataFrame = self._compute_valuation_metrics(metric)
+        # Calcul et récupération des métriques de valorisation et des prix
+        self.df_valo, self.df_prices = self._compute_valuation_metrics(metric)
         print("Fin de l'import des données")
 
     def _get_tickers_list(self)->list:
@@ -264,6 +274,23 @@ class Data:
             i += 1
 
         return dict_metrics
+
+    def _get_risk_free_rate(self)->pd.DataFrame:
+        """
+        Fonction permettant de récupérer le taux sans risqur
+        :return:
+        """
+
+        # Field à récupérer
+        fields: list = ["PX_LAST"]
+
+        # Import du taux sans risque
+        df_rf: pd.DataFrame = self.blp.bdh(strSecurity=self.ticker_rf, strFields=fields, startdate=self.start_date,enddate=self.end_date)
+
+        # Export en excel pour réutiliser dans le code central
+        path: str = "data/rf.xlsx"
+        df_rf.to_excel(path)
+        return df_rf
 
 
 

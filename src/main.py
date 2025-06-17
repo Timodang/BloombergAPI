@@ -1,59 +1,15 @@
 from datetime import datetime
 import pandas as pd
 import numpy as np
+from dateutil.relativedelta import relativedelta
 from pandas import read_excel
 
 from src.classes.data import Data
+from src.classes.utilitaire import Utils
 
 # Pip install pour blpapi (à mettre dans un notebook)
 # pip install --index-url=https://blpapi.bloomberg.com/repository/releases/python/simple blpapi
 
-
-
-# Fonction permettant de réaliser un mapping sectoriel
-def data_to_sector(df_valo: pd.DataFrame, df_sectors:pd.DataFrame) -> dict:
-    """
-    Fonction permettant de réaliser un mapping sectoriel pour construire des stratégies segmentées
-    :param df_valo: DataFrame contenant la métrique de valorisation de tous les titres ayant fait parti de l'univers
-    :param df_sectors: DataFrame contenant le secteur de chaque titre de l'univers d'investissement
-    :return: Un dictionnaire qui associe à chaque secteur un dataframe contenant tous les titres qui lui sont rattachés
-    """
-
-    # création d'un dictionnaire vide pour stocker les tickers par secteur
-    dict_sector: dict = dict()
-
-    # Tous les tickers sans secteur reçoivent le ticker "other"
-    df_sectors.replace(np.nan, "other", inplace=True)
-
-    # Seuls les titres pour lesquelles la métrique de valorisation est disponible sont conservés
-    df_sectors = df_sectors.loc[:, df_sectors.columns.isin(df_valo.columns)]
-
-    # Récupération des secteurs présents dans l'univers d'investissement
-    sector_array: np.array = pd.unique(df_sectors.iloc[0])
-
-    # Boucle sur chaque secteur
-    for i in range(len(sector_array)):
-
-        # Récupération du secteur qui sera utilisé comme clé
-        sector_key: str = sector_array[i]
-
-        # Récupération sous forme de booléen de tous les tickers qui sont rattachés à ce secteur
-        sector_bool_array: np.array(bool) = df_sectors.iloc[0].eq(sector_key)
-
-        # Filtre sur les tickers rattachés à ce secteurs
-        df_prices_sector: pd.DataFrame = df_valo.loc[:, sector_bool_array]
-        df_prices_sector.fillna(0, inplace=True)
-
-        # Ajout au dictionnaire
-        dict_sector[sector_key] = df_prices_sector
-
-    # Suppression des others (et financières, à faire)
-    del dict_sector["other"]
-    del dict_sector["Financial Services"]
-    del dict_sector["Banks"]
-    del dict_sector["Insurance"]
-
-    return dict_sector
 
 """
 Import des données
@@ -63,7 +19,7 @@ Import des données
 df_sector: pd.DataFrame = read_excel("data/Secteur des actifs.xlsx", sheet_name="Secteurs")
 df_sector.replace(0, np.nan, inplace=True)
 
-
+# Définition des paramètres pour le backtester
 start_date: datetime = datetime(1995, 1, 1)
 end_date: datetime = datetime(2025, 1,1)
 list_ticker_bench: list = ["RIY Index"]
@@ -71,16 +27,27 @@ list_ticker_rf: list = ["SOFR"]
 data_loader: Data = Data(start_date=start_date, end_date=end_date, list_ticker_rf=list_ticker_rf,
                          list_ticker_bench=list_ticker_bench, use_api=False)
 
+# Import des données
 data_loader.import_all_data("book value") # prend bcp de temps et erreur sur les filtres par colonne, à checker
-a=3
 
-"""
-Première étape : Importation des données
-"""
+# Récupération du dataframe contenant la métrique de valorisation
+df_valo: pd.DataFrame = data_loader.df_valo
+list_dates: list = data_loader.calendar
+
+# Réalisation du mapping sectoriel
+dict_sector: dict = Utils.data_to_sector(df_valo, df_sector)
 
 """
 Deuxième étape : Réalisation du backtest
 """
+
+# Définition de la date à partir de laquelle on met en place la stratégie
+strat_date: datetime = start_date + relativedelta(years=5)
+
+# Définition du levier et de la taille du fonds (en $ par hypothèse ==> single currency)
+leverage: int = 3
+capital : int = 100000000
+
 
 """
 Troisième étape : Etude des performances
