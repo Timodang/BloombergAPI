@@ -49,6 +49,10 @@ class Portfolio:
         if df_prices.shape != df_val.shape:
             raise Exception("Les dimensions des dataframes de prix et de valorisation ne correspondent pas")
 
+        # Vérification sur la stratégie
+        if strat != Portfolio.DEEP_VALUE_LABEL:
+            raise Exception("Seula la stratégie Deep Value est implémentée pour l'instant")
+
         # instance de la classe util
         self.utils: Utils = Utils()
 
@@ -80,6 +84,8 @@ class Portfolio:
         self.cash_long: float = self.capital
         self.cash_short: float = 0
 
+        # Instanciation de la stratégie
+
         # Exposition brute
         self.exposition: pd.Series = pd.Series()
 
@@ -105,7 +111,7 @@ class Portfolio:
 
         # 3eme étape : Calcul de l'exposition brute du portefeuille
 
-    def build_portfolio(self)->pd.DataFrame:
+    def build_portfolio(self)->(pd.DataFrame, pd.DataFrame, pd.DataFrame) :
         """
         Méthode permettant de construire les poids du portefeuille dans
         le cas d'un backtest en euros
@@ -115,6 +121,9 @@ class Portfolio:
         # Initialisation d'un dataframe vierge pour stocker les positions par actifs
         positions: pd.DataFrame = pd.DataFrame(0.0, index=self.df_valo.index,
                                                columns=self.df_valo.columns)
+
+        # Initialisation d'un dataframe vierge pour stocker les quantité par actids
+        df_quantities: pd.DataFrame = positions.copy()
 
         # Initialisation d'un portefeuille vierge pour déterminer la NAV par actif
         df_nav: pd.DataFrame = pd.DataFrame(0, index = self.df_valo.index, columns = ["NAV"])
@@ -129,25 +138,44 @@ class Portfolio:
         index_start_date: int = next((d for d in list_date if d>=self.start_date), None)
 
         # Boucle sur les périodes
-        for idx in range(index_start_date, self.df_valo.shape[0]):
+        for idx in range(index_start_date, nb_periods):
 
             # récupération de la date courante
             current_date: datetime = list_date[idx]
 
+            # Récupération des prix de la période précédentes
+            prec_prices =  self.df_prices.iloc[idx-1, :]
+
             # Cas particulier : première date
             if idx == index_start_date:
-
-
-
                 # Mise en place de la stratégie par portefeuille
-                positions[idx, :] = self._compute_portfolio_position_v2(current_date, bool_first_date=True)
+                positions[idx, :] = self._compute_portfolio_position(current_date, bool_first_date=True)
+
+                # NAV de la période = capital de la stratégie
+                df_nav[idx, :] = self.capital
+
             # Autres cas
             else:
-                positions[idx, :] = self._compute_portfolio_position_v2(current_date)
+
+                # Calcul de la NAV de début de période
+
+                # Mise à jour des poids pour l'ensemble des actifs
+                positions[idx, :] = self._compute_portfolio_position(current_date)
+
+            # Récupération des positions de la période et de la NAV de début de période
+            current_positions = positions[idx, :]
+            current_nav = df_nav[idx, :]
+
+            # Calcul des quantités
+            df_quantities[idx, :] = self.compute_quantity(current_positions, prec_prices, current_nav)
+
+            # Mise à jour du compte cash
 
         # Seules les données à partir de la date de début de la stratégie sont conservées
         positions = positions.iloc[index_start_date:, ]
-        return positions
+        df_quantities = df_quantities.iloc[index_start_date, :]
+        df_nav = df_nav.iloc[index_start_date, :]
+        return positions, df_quantities, df_nav
 
     def _compute_portfolio_position(self, current_date:datetime,
                                        bool_first_date:bool = False)->list:
@@ -160,14 +188,8 @@ class Portfolio:
         if self.segmentation != Portfolio.SECTOR_LABEL and self.segmentation is not None:
             raise Exception("Segmentation non implémentée")
 
-        # Seule stratégie implémentée pour le moment : Deep Value
-        if self.strategy != Portfolio.DEEP_VALUE_LABEL:
-            raise Exception("Stratégie non implémentée")
-
         # Liste pour stocker les poids du portefueille
         list_weights_ptf: list = [0] * self.df_valo.shape[1]
-
-        # Instanciation de la stratégie
 
         # Boucle par secteur
         for key, value in self.dict_sectors.items():
@@ -188,6 +210,10 @@ class Portfolio:
             # Etape 1 : déterminer s'il faut prendre une position sur le secteur ou non (méthode take_positions)
             bool_take_position: bool = False
 
+            # Etape 2 : Récupération des positions
+            list_weight_sector: list = []
+            list_weights_ptf = list(map(add, list_weights_ptf, list_weight_sector))
+
             # Si position à prendre (= bool_take_position) = True et pas de position actuellement en portefeuille sur le secteur, acquisition
             if bool_take_position and a==3:
 
@@ -203,8 +229,34 @@ class Portfolio:
                 a = 3
 
             # Autres cas : aucune prise de position
+            return list_weights_ptf
 
+    @staticmethod
+    def compute_quantity(current_positions: pd.DataFrame, prec_prices: pd.DataFrame, current_nav:pd.DataFrame)->list:
+        """
+        Méthode permettant de passer des poids aux quantités
+        :param current_positions:
+        :param prec_prices:
+        :param current_nav:
+        :return:
+        """
 
+        # récupération des quantités et des prix
+        weights: pd.Series = pd.Series(current_positions, dtype=float)
+        prices: pd.Series = pd.Series(prec_prices, dtype=float)
+
+        # Montant à investir par actif
+        amount_by_asset: pd.Series = weights * current_nav
+
+        # Calcul des quantités
+        quantities: list = [np.floor(amount_by_asset.values / prices.values).fillna(0).astype(int)]
+
+        # Récupération des quantités
+        return quantities
+
+    # Méthode pour maj le compte cash
+
+    # Méthode pour calculer la NAV
     def _compute_nav(self, bool_first_date:bool = False)->float:
         """
         Méthode permettant de calculer la NAV actuel
