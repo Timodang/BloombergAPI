@@ -98,11 +98,14 @@ class Portfolio:
         # Instanciation d'un dataframe pour stocker les trades
         self.trade_historic: pd.DataFrame = pd.DataFrame(columns = self.df_prices.columns)
 
-        # MODFICATIOIN Instanciation de la stratégie
+        # AJOUT : Stocker les positions par secteur sous forme de DataFrames
+        self.sector_positions = {}  # {sector: DataFrame avec colonnes ['ticker', 'weight']}
+        
+        # MODIFICATION Instanciation de la stratégie
         if self.strategy == Portfolio.DEEP_VALUE_LABEL:
-            from strategy import Strategy  # Import de votre classe
+            from strategy import Strategy  # Import de la classe
             self.strategy_instance = Strategy(
-                df_valo=self.df_valo,
+                df_valo=self.df_val,
                 df_prices=self.df_prices,
                 universe=self.universe,
                 dict_sectors=self.dict_sectors,
@@ -190,72 +193,64 @@ class Portfolio:
         df_nav = df_nav.iloc[index_start_date, :]
         return positions, df_quantities, df_nav
 
-    # MODFICATIOIN
-    def _compute_portfolio_position(self, current_date:datetime,
-                                       bool_first_date:bool = False)->list:
+        # MODFICATIOIN
+    def _compute_portfolio_position(self, current_date: datetime,
+                                bool_first_date: bool = False) -> list:
         """
-        Méthode permettant de calculer les positions, date par date, pour le portefeuille Deep Value avec
-        segmentation par industrie
-        :return:
+        Méthode adaptée pour utiliser la nouvelle interface Strategy
+        qui retourne des actions string et des DataFrames
         """
         # Gestion des erreurs pour garantir que l'utilisateur réalise une segmentation sectorielle
         if self.segmentation != Portfolio.SECTOR_LABEL and self.segmentation is not None:
             raise Exception("Segmentation non implémentée")
 
-        # Liste pour stocker les poids du portefeuille
+        # Liste pour stocker les poids du portefeuille global
         list_weights_ptf: list = [0] * self.df_valo.shape[1]
 
         # Boucle par secteur
-        for key, value in self.dict_sectors.items():
+        for sector, df_valo_sector in self.dict_sectors.items():
             
-            # Récupération du secteur courant et du dataframe associé
-            sector: str = key
-            df_valo_sector: pd.DataFrame = value
-
-            # Cas particulier de la première date
-            if bool_first_date:
-                # Appel de la méthode pour calculer la médiane sur les périodes précédentes
-                median = self.strategy_instance.calculate_sector_median(
-                    sector, df_valo_sector, self.start_date
-                )
-                # Note: La médiane est calculée mais pas utilisée directement ici
-                # Elle est utilisée en interne par la stratégie pour les seuils
-
-            # Récupération de la métrique de valorisation pour tous les titres du portefeuille à la date courante
-            vector_metrics: pd.DataFrame = df_valo_sector.loc[current_date, :]
-
-            # Etape 1 : déterminer s'il faut prendre une position sur le secteur ou non
-            bool_take_position: bool = self.strategy_instance.should_take_position(
-                sector, current_date, df_valo_sector
+            # Récupérer les positions existantes du secteur (DataFrame)
+            existing_positions = self.sector_positions.get(sector, pd.DataFrame(columns=['ticker', 'weight']))
+            
+            # Étape 1 : Obtenir l'action à prendre ('buy', 'sell', ou 'neutral')
+            action = self.strategy_instance.should_take_position(sector, current_date)
+            
+            # Étape 2 : Obtenir le DataFrame des positions pour ce secteur
+            sector_positions_df = self.strategy_instance.get_sector_weights(
+                sector, 
+                current_date, 
+                action,
+                existing_positions
             )
-
-            # Etape 2 : Récupération des positions
-            list_weight_sector: list = []
-
-            # Si position à prendre, acquisition ou maintien
-            if bool_take_position:
-                
-                # Récupération des positions pour le secteur (renvoyer les poids par actif)
-                list_weight_sector = self.strategy_instance.get_sector_weights(
-                    sector, df_valo_sector, current_date
-                )
-                
-                # Aggrégation avec les poids de tous les tickers sur lesquels une position est prise à cette date
-                list_weights_ptf = list(map(add, list_weights_ptf, list_weight_sector))
-
-            # Deuxième cas de figure : position à ne pas prendre (= False) et position actuellement en portefeuille : provoque une cession
-            elif not bool_take_position:
-                # Pas d'action supplémentaire nécessaire car :
-                # 1. should_take_position() a déjà nettoyé current_positions dans Strategy
-                # 2. list_weight_sector reste vide = [] 
-                # 3. Les poids restent à 0 pour ce secteur
-                pass
-
-            # Mise à jour de l'historique des spreads (optionnel mais recommandé)
-            self.strategy_instance.update_sector_history(
-                sector, current_date, df_valo_sector
-            )
-
+            
+            # Stocker les nouvelles positions du secteur
+            self.sector_positions[sector] = sector_positions_df
+            
+            # Étape 3 : Convertir le DataFrame sectoriel en vecteur de poids global
+            if not sector_positions_df.empty:
+                for _, row in sector_positions_df.iterrows():
+                    ticker = row['ticker']
+                    weight = row['weight']
+                    
+                    # Trouver l'index du ticker dans le DataFrame global
+                    if ticker in self.df_valo.columns:
+                        ticker_index = self.df_valo.columns.get_loc(ticker)
+                        list_weights_ptf[ticker_index] = weight
+                    # else:
+                    #     print(f"Warning: ticker {ticker} not found in global DataFrame columns")
+        
+        # # Vérification de l'exposition totale (optionnel)
+        # total_exposure = sum(abs(w) for w in list_weights_ptf)
+        # if total_exposure > 0:
+        #     print(f"Date {current_date.strftime('%Y-%m-%d')} - Exposition totale: {total_exposure:.1%}")
+            
+            # # Compter les positions actives
+            # long_count = sum(1 for w in list_weights_ptf if w > 0)
+            # short_count = sum(1 for w in list_weights_ptf if w < 0)
+            # if long_count > 0 or short_count > 0:
+            #     print(f"  Positions: {long_count} longs, {short_count} shorts")
+        
         # Retour de la liste des poids pour l'ensemble du portefeuille
         return list_weights_ptf
 
