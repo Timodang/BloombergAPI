@@ -214,5 +214,47 @@ class Utils:
 
         return dict_sector
 
+    @staticmethod
+    def monthly_to_daily_dataframe(df_monthly:pd.DataFrame, list_dates: list)->pd.DataFrame:
+        """
+        Méthode permettant de convertir en dataframe monthly en daily
+        :param df_monthly:
+        :param list_dates:
+        :return:
+        """
+
+        # Vérification : si Dates pas dans le dataframe initial, renvoie une erreur
+        if "dates" not in df_monthly.columns:
+            raise Exception(f"La date doit figurer dans les colonnes du dataframe. En l'état, les colonnes présentes sont : {df_monthly.columns}")
+
+        # Vérification : si la fréquence des dates est plus petite que les mois, renvoie une erreur
+        if len(list_dates) < df_monthly.shape[0]:
+            raise Exception("Il faut une fréquence de dates plus faibles pour la conversion")
+
+        # Création d'un dataframe et conversion
+        df_higher_freq: pd.DataFrame = pd.DataFrame({"dates":list_dates})
+
+        # Création d'un dataframe de résultat et récupération
+        df_resultat: pd.DataFrame = pd.merge_asof(df_higher_freq.sort_values('dates'),
+                                                  df_monthly.sort_values('dates'),
+                                                  on="dates",
+                                                  direction="backward")
+
+
+        # Pour toutes les dates antérieures, on remplace par les valeurs de la première date disponible
+        compo_first_date = df_monthly.iloc[0].drop('dates')
+        df_resultat.fillna(value=compo_first_date, inplace=True)
+        return df_resultat
+    @staticmethod
+    def prepare_port_file(df_quantity: pd.DataFrame, name_ptf: str):
+        """
+        Méthode permettant de construire le fichier Excel pour l'export dans Bloomberg
+        :param df_quantity:
+        :param name_ptf:
+        :return:
+        """
+
+        # Création d'un dataframe vierge avec les colonnes requises pour df_port
+
 
 

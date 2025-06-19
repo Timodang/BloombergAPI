@@ -135,6 +135,17 @@ class Data:
             # Fermeture de la session bloomberg
             self.blp.closeSession()
 
+        # Autre cas, on importe les dataframes déjà créés
+        # else:
+            # Chargement des secteurs
+            # self.sector = pd.read_excel("data/Secteur des actifs.xlsx")
+
+            # Chargement des composition
+            # self.universe = pd.read_excel("data/Composition univers.xlsx")
+
+            # Chargement du taux sans risque
+
+
         # Calcul et récupération des métriques de valorisation et des prix
         self.df_valo, self.df_prices = self._compute_valuation_metrics(metric)
         print("Fin de l'import des données")
