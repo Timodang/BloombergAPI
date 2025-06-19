@@ -152,7 +152,7 @@ class Portfolio:
             # Cas particulier : première date
             if idx == index_start_date:
                 # Mise en place de la stratégie par portefeuille
-                self.df_positions[idx, :] = self._compute_portfolio_position(current_date, bool_first_date=True)
+                self.df_positions[idx, :] = self._compute_portfolio_position(current_date)
 
             else:
                 # Mise à jour des poids pour l'ensemble des actifs
