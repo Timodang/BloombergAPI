@@ -166,13 +166,12 @@ class Strategy:
         signal_series = pd.Series(signals)
         weights_list  = self.scheme.compute_weights(signal_series)
         # Construction du DataFrame final
-        return pd.DataFrame({'ticker': list(signals.keys()), 'weight': weights_list}): list(wdict), 'weight': list(wdict.values())})
+        return pd.DataFrame({'ticker': list(signals.keys()), 'weight': weights_list})
 
     def _calculate_sector_spread_at_date(
         self,
         sector: str,
-        date: datetime.datetime
-    ) -> float:
+        date: datetime.datetime) -> float:
         """
         Calcule le log-spread de cheapness pour un secteur à une date :
           log(mean(top décile) / mean(bottom décile)),
