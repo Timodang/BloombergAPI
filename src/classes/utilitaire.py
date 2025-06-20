@@ -245,6 +245,7 @@ class Utils:
         compo_first_date = df_monthly.iloc[0].drop('dates')
         df_resultat.fillna(value=compo_first_date, inplace=True)
         return df_resultat
+
     @staticmethod
     def prepare_port_file(df_quantity: pd.DataFrame, name_ptf: str):
         """
@@ -255,6 +256,56 @@ class Utils:
         """
 
         # Création d'un dataframe vierge avec les colonnes requises pour df_port
+        df_port:pd.DataFrame = pd.DataFrame(columns = ["PORTFOLIO NAME","SECURITY_ID","QUANTITY","Date"])
+
+        # Première ligne du fichier
+        first_line = {
+            "PORTFOLIO NAME": "Portfolio Name",
+            "SECURITY_ID":"ISIN",
+            "QUANTITY":"Position",
+            "Date":"Date"
+        }
+        df_port = pd.concat([df_port, pd.DataFrame([first_line])], ignore_index=True)
+
+        # Boucle sur les périodes
+        for t in range(1, df_quantity.shape[0]):
+
+            # Récupération des quantités actuelles et précédentes
+            current_quantities: pd.Series = df_quantity.iloc[t,:]
+            prec_quantities: pd.Series = df_quantity.iloc[t-1, :]
+
+            # Récupération de toutes les occurences différentes
+            index_operations = prec_quantities != current_quantities
+
+            # Pour toutes les occurences différentes, calcul des mouvements d'actions sur la période
+            delta_stocks:list = (current_quantities[index_operations]-prec_quantities[index_operations]).tolist()
+
+            # Si au moins une valeur de delta_stocks est différente de 0, cela implique qu'il y a eu des opérations
+            if np.any(np.array(delta_stocks) > 0):
+
+                # Récupération des tickers concernés
+                tickers_to_update: list = current_quantities[index_operations].index.tolist()
+
+                # Création des vecteurs pour le nom du portefeuille et la date
+                list_date: list = [df_quantity.index[t]] * len(tickers_to_update)
+                list_name_ptf:list = [name_ptf] * len(tickers_to_update)
+
+                # création du dataframe de la période
+                df_transaction: pd.DataFrame = pd.DataFrame({
+                    "PORTFOLIO NAME":list_name_ptf,
+                    "SECURITY_ID":tickers_to_update,
+                    "QUANTITY":delta_stocks,
+                    "Date":list_date
+                })
+
+                # Ajout au dataframe central
+                df_port = pd.concat([df_port, df_transaction], ignore_index = True)
+
+        # Export du fichier portefeuille en Excel
+        df_port.to_excel("Fichier Portefeuille bloom.xlsx")
+
+
+
 
 
 

@@ -54,3 +54,41 @@ class Visualisation:
         ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: '{:.0%}'.format(y)))
         plt.tight_layout()
         return ax
+
+    @staticmethod
+    def plot_exposure(exposition: pd.DataFrame,
+                      title: str = "Exposition brute du portefeuille") -> plt.Axes:
+        """
+        Affiche l'exposition brute du portefeuille au cours du temps.
+
+        :param exposition: DataFrame ou Series de l'exposition brute
+        :param title: Titre du graphique
+        :return: L'objet Axes
+        """
+        # Vérifier que les données existent
+        if exposition is None or (hasattr(exposition, 'empty') and exposition.empty):
+            raise ValueError("Les données d'exposition ne sont pas disponibles. Exécutez d'abord run_backtest().")
+
+        # Si c'est un DataFrame à colonne unique, extraire la Series sous-jacente
+        if isinstance(exposition, pd.DataFrame) and exposition.shape[1] == 1:
+            series = exposition.iloc[:, 0]
+        else:
+            series = exposition.squeeze()
+
+        # Trace de l'exposition brute au fil du temps
+        fig, ax = plt.subplots(figsize=(12, 6))
+        series.plot(ax=ax, legend=False)
+
+        # Titres et labels
+        ax.set_title(title, fontsize=14)
+        ax.set_xlabel("Date", fontsize=12)
+        ax.set_ylabel("Exposition brute", fontsize=12)
+
+        # Formater l'axe des ordonnées en pourcentage
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f"{y:.1%}"))
+
+        # Grille légère
+        ax.grid(True, linestyle="--", alpha=0.7)
+
+        plt.tight_layout()
+        return ax

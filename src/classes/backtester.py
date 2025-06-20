@@ -224,7 +224,7 @@ class Portfolio:
                     # Trouver l'index du ticker dans le DataFrame global
                     if ticker in self.df_valo.columns:
                         ticker_index = self.df_valo.columns.get_loc(ticker)
-                        list_weights_ptf[ticker_index] = weight
+                        list_weights_ptf[ticker_index] = -weight
 
         # Retour de la liste des poids pour l'ensemble du portefeuille
         return list_weights_ptf, nb_sect_buy
@@ -243,7 +243,7 @@ class Portfolio:
         prices: pd.Series = pd.Series(prec_prices, dtype=float).astype(float)
 
         # Montant à investir par actif (=> poids * part de la NAV allouée au secteur)
-        amount_by_asset: pd.Series = weights * current_nav * self.amount_per_sector
+        amount_by_asset: pd.Series = weights * self.cash_long * self.amount_per_sector
 
         # Calcul des quantités (arrondis à l'entier inférieur pour ne pas détenir de fraction d'action)
         quantities: np.array = np.nan_to_num(amount_by_asset.values / prices.values, nan = 0.0)

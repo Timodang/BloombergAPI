@@ -94,7 +94,7 @@ class Data:
         df_fundamental_to_keep: pd.DataFrame = df_fundamental_aligned.iloc[0 :df_fundamental_aligned.shape[0] - 21,]
 
         # Calcul du price-to-book
-        df_valo: pd.DataFrame = df_prices_to_keep / df_fundamental_to_keep
+        df_valo: pd.DataFrame = df_fundamental_to_keep / df_prices_to_keep
 
         return df_valo, df_prices
 

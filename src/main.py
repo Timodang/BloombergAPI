@@ -81,6 +81,12 @@ Troisième étape : Etude des performances
 """
 nav_for_perf: pd.Series = ptf.df_nav["NAV"]
 
+# Affichage graphique
+ptf_ret: pd.DataFrame = Utils.compute_asset_returns(nav_for_perf, "daily", "discret")
+Visualisation.plot_cumulative_returns(ptf_ret, "Rendements cumulatifs de la stratégie Deep Value")
+Visualisation.plot_exposure(ptf.df_exposition, "Exposition brute stratégie Deep Value")
+Utils.prepare_port_file(ptf.df_quantities, "Deep Value")
+
 # Initialisation du module de métrique
 metriques: Metrics = Metrics(nav_for_perf, "discret", frequency="daily")
 perf_stats_ptf: pd.DataFrame = metriques.display_stats("Deep Value")
