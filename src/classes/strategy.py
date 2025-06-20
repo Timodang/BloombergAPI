@@ -106,7 +106,7 @@ class Strategy:
     def should_take_position(
         self,
         sector: str,
-        current_date: datetime.datetime
+        current_date: datetime.datetime,
     ) -> str:
         """
         Détermine le signal pour un secteur à la date donnée :
@@ -255,3 +255,4 @@ class Strategy:
         signals = {t: 1.0 for t in tops}
         signals.update({t: -1.0 for t in bottoms})
         return signals
+

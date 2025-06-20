@@ -34,7 +34,7 @@ df_valo: pd.DataFrame = data_loader.df_valo
 list_dates: list = data_loader.calendar
 
 # Import des secteurs
-df_sector: pd.DataFrame = read_excel("data/Secteur des actifs.xlsx", sheet_name="Secteurs")
+df_sector: pd.DataFrame = read_excel("data/Secteur des actifs.xlsx")
 df_sector.replace(0, np.nan, inplace=True)
 
 # Import de l'univers d'investissement
@@ -64,7 +64,7 @@ ptf:Portfolio = Portfolio(df_val=df_valo,
                           universe=df_universe_daily,
                           dict_sector=dict_sector,
                           strat="Deep Value",
-                          weighting="ranking",
+                          weighting="equalweight",
                           start_date=strat_date,
                           list_date=list_dates,
                           leverage=leverage,
@@ -84,8 +84,6 @@ nav_for_perf: pd.Series = ptf.df_nav["NAV"]
 # Affichage graphique
 ptf_ret: pd.DataFrame = Utils.compute_asset_returns(nav_for_perf, "daily", "discret")
 Visualisation.plot_cumulative_returns(ptf_ret, "Rendements cumulatifs de la stratégie Deep Value")
-Visualisation.plot_exposure(ptf.df_exposition, "Exposition brute stratégie Deep Value")
-Utils.prepare_port_file(ptf.df_quantities, "Deep Value")
 
 # Initialisation du module de métrique
 metriques: Metrics = Metrics(nav_for_perf, "discret", frequency="daily")
@@ -94,54 +92,5 @@ perf_stats_ptf: pd.DataFrame = metriques.display_stats("Deep Value")
 """
 Quatrième étape : Export pour Bloomberg
 """
+Utils.prepare_port_file(ptf.df_quantities, "Deep Value")
 
-#old
-
-"""
-# Pour générer les compos (pb dans l'export bloom, fonction gère pas Equity)
-# Import des données contenant les compositions par date / composition univers
-df_compo_date: pd.DataFrame = pd.read_excel('data/Compo par date.xlsx', sheet_name="BDS VALUE FINAL AVEC DOUBLONS")
-df_compo: pd.DataFrame = pd.read_excel("data/Composition univers.xlsx")
-df_compo_date.dropna(axis="columns", how="all", inplace=True)
-df_compo = df_compo.rename(columns = {"Unnamed: 0": "dates"})
-df_compo.set_index("dates", inplace=True)
-
-
-
-# Boucle pour construire le dataframe des compositions
-for i, (index, row) in enumerate(df_compo.iterrows()):
-    date = index
-    # récupération de la liste des tickers
-    list_current_ticker: list = df_compo_date.iloc[0:df_compo_date.shape[0],i]
-    list_current_ticker_correct = [str(ticker) + " Equity" for ticker in list_current_ticker]
-
-    #
-    df_compo.loc[date, df_compo.columns.isin(list_current_ticker_correct)] = 1
-
-df_compo.to_excel("Composition Russel 1000.xlsx")
-a=3
-"""
-
-"""
-# Import des données contenant les compositions mensuelles du S&P 500
-df_compo:pd.DataFrame = pd.read_excel('data/Compo MSCI.xlsx', sheet_name="Composition MSCI World")
-df_compo.set_index("Dates", inplace=True)
-# Les valeurs manquantes sont remplacées par des 0
-df_compo.fillna(0, inplace=True)
-
-# Import des données contenant les prix des stocks du MSCI et retraitements
-df_msci_stocks: pd.DataFrame = pd.read_excel('data/MSCI.xlsx')
-df_msci_stocks.set_index("Dates", inplace=True)
-df_msci_stocks = df_msci_stocks.apply(lambda series: series.loc[:series.last_valid_index()].ffill())
-# Les valeurs manquantes sont remplacées par des 0 pour réaliser les traitements ultérieures
-df_msci_stocks.replace(np.nan, 0, inplace=True)
-df_msci_stocks.fillna(0, inplace=True)
-
-# Import des données relatives au secteur de chaque ticker
-df_sector: pd.DataFrame = pd.read_excel('data/Compo MSCI.xlsx', sheet_name="Secteurs")
-df_sector.set_index("Ticker", inplace = True)
-
-# Réalisation du mapping sectoriel
-dict_tickers_sectors: dict = data_to_sector(df_msci_stocks, df_sector)
-a=3
-"""

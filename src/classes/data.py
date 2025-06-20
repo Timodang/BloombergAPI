@@ -135,17 +135,6 @@ class Data:
             # Fermeture de la session bloomberg
             self.blp.closeSession()
 
-        # Autre cas, on importe les dataframes déjà créés
-        # else:
-            # Chargement des secteurs
-            # self.sector = pd.read_excel("data/Secteur des actifs.xlsx")
-
-            # Chargement des composition
-            # self.universe = pd.read_excel("data/Composition univers.xlsx")
-
-            # Chargement du taux sans risque
-
-
         # Calcul et récupération des métriques de valorisation et des prix
         self.df_valo, self.df_prices = self._compute_valuation_metrics(metric)
         print("Fin de l'import des données")
@@ -267,12 +256,6 @@ class Data:
         list_fields:list = ["PX_LAST","BOOK_VAL_PER_SH", "EPS_FOR_RATIOS"]
         list_nom_fichier: list = ["Prix des actifs.xlsx", "Book Value des actifs.xlsx", "EPS des actifs.xlsx"]
         i: int = 0
-
-        #tickers = self.unique_tickers
-        #strFields = ["PX_LAST","BOOK_VAL_PER_SH","EPS_FOR_RATIOS"]
-        #start_date = dt.datetime(2024,12,15)
-        #end_date = dt.datetime(2024, 12, 20)
-        #test = self.blp.bdh(strSecurity=tickers, strFields=strFields, startdate=start_date,enddate=end_date)
 
         # Récupération des prix / fondamentaux pour toutes les entreprises ayant fait parti de l'univers
         dict_metrics: dict = self.blp.bdh(strSecurity=self.unique_tickers, strFields=list_fields, startdate=self.start_date,enddate=self.end_date)

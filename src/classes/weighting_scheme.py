@@ -7,7 +7,7 @@ from typing import Union
 
 
 class WeightingSchemeType(Enum):
-    EQUAL_WEIGHT = "Equal Weight"
+    EQUAL_WEIGHT = "equalweight"
     RANK = "Ranking"
 
 class WeightingScheme(ABC):

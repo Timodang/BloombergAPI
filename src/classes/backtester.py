@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 import datetime as datetime
-from operator import add
 
 from src.classes.strategy import Strategy
 from src.classes.utilitaire import Utils
@@ -114,19 +113,6 @@ class Portfolio:
         Méthode permettant de réaliser le backtest d'un portefeuille en euros
         :return:
         """
-
-        # Initialisation d'un dataframe vierge pour stocker les positions par actifs
-        # positions: pd.DataFrame = pd.DataFrame(0.0, index=self.df_valo.index, columns=self.df_valo.columns)
-
-        # Initialisation d'un dataframe vierge pour stocker les quantité par actids
-        # df_quantities: pd.DataFrame = positions.copy()
-
-        # Initialisation d'un dataframe vierge pour déterminer la NAV par actif
-        # df_nav: pd.DataFrame = pd.DataFrame(0, index = self.df_valo.index, columns = ["NAV"])
-
-        # Initialisation d'un dataframe vierge pour déterminer l'exposition brute du portefeuille
-        # df_exposition_brute: pd.DataFrame = pd.DataFrame(0, index = self.df_valo.index, columns = ["Exposition Brute"])
-
         # Récupération du nombre de périodes pour le backtest
         nb_periods: int = self.df_valo.shape[0]
 
@@ -159,7 +145,7 @@ class Portfolio:
             # NAV de début de période (utilisée pour le calcul des quantités) = NAV de fin de période précédente
             current_nav: float = self.df_nav.iloc[idx-1]['NAV']
 
-            # Récupération des positions de la période et de la NAV de début de période
+            # Récupération des positions de la période
             current_positions = self.df_positions.iloc[idx, :]
 
             # Calcul des quantités (portefeuille LS et Long Only)
@@ -176,6 +162,10 @@ class Portfolio:
             # Calcul de l'exposition brute
             self.df_exposition.iloc[idx] = self._compute_exposition(current_date)
             self.df_exposition_long.iloc[idx] = self._compute_exposition(current_date, bool_long_only=True)
+
+            # Si breach, cessions partielles et maj du compte cash en conséquence
+            self._check_and_reduce_exposure(current_date)
+            self._compute_operations(idx)
 
         # Seules les données à partir de la date de début de la stratégie sont conservées
         self.df_positions = self.df_positions.iloc[index_start_date:, ]
@@ -206,19 +196,23 @@ class Portfolio:
         for sector, df_valo_sector in self.dict_sectors.items():
 
             # Récupérer les positions existantes du secteur (DataFrame)
-            existing_positions = self.sector_positions.get(sector, pd.DataFrame(columns=['ticker', 'weight']))
+            # existing_positions = self.sector_positions.get(sector, pd.DataFrame(columns=['ticker', 'weight']))
+            # has_position=False
+            # Si au moins une position est positive, cela veut dire que le secteur est dans le portefeuille
+            # if (existing_positions > 0).any().any():
+            #    has_position: bool = True
 
             # Étape 1 : Obtenir l'action à prendre ('buy', 'sell', ou 'neutral')
             action = self.strategy_instance.should_take_position(sector, current_date)
             if action == "buy":
                 nb_sect_buy+=1
 
+
             # Étape 2 : Obtenir le DataFrame des positions pour ce secteur
             sector_positions_df = self.strategy_instance.get_sector_weights(
                 sector,
                 current_date,
                 action,
-                existing_positions
             )
 
             # Stocker les nouvelles positions du secteur
@@ -233,7 +227,10 @@ class Portfolio:
                     # Trouver l'index du ticker dans le DataFrame global
                     if ticker in self.df_valo.columns:
                         ticker_index = self.df_valo.columns.get_loc(ticker)
-                        list_weights_ptf[ticker_index] = -weight
+                        list_weights_ptf[ticker_index] = weight
+
+        # Rescaling de la liste
+        list_weights_ptf = self.rescale_weights_long_short(list_weights_ptf)
 
         # Retour de la liste des poids pour l'ensemble du portefeuille
         return list_weights_ptf, nb_sect_buy
@@ -266,7 +263,7 @@ class Portfolio:
         prices: pd.Series = pd.Series(prec_prices, dtype=float).astype(float)
 
         # Montant à investir par actif (=> poids * part de la NAV allouée au secteur)
-        amount_by_asset: pd.Series = weights * self.cash_long * self.amount_per_sector
+        amount_by_asset: pd.Series = weights * current_nav * self.amount_per_sector
 
         # Calcul des quantités (arrondis à l'entier inférieur pour ne pas détenir de fraction d'action)
         quantities: np.array = np.nan_to_num(amount_by_asset.values / prices.values, nan = 0.0)
@@ -333,7 +330,7 @@ class Portfolio:
         ptf_value: float = (current_quantities.values * current_prices.values).sum()
 
         # Calcul de la nav (valeur du ptf + montant sur le compte de cash long, cash short bloqué)
-        nav: float = ptf_value + self.cash_long + cash
+        nav: float = ptf_value + cash
         return nav
 
     # Méthode permettant de calculer l'exposition brute par date
@@ -354,7 +351,7 @@ class Portfolio:
         current_prices: pd.DataFrame = self.df_prices.loc[current_date,:]
 
         # Récupération de la NAV eop en t
-        current_nav: float = self.df_nav.loc[current_date, :]
+        current_nav: float = self.df_nav.loc[current_date, :]["NAV"]
 
         # Calcul de l'exposition brute du portefeuille
         exposition: float = np.sum(np.abs(current_quantities.values * current_prices.values)) / current_nav
@@ -380,7 +377,9 @@ class Portfolio:
         amount_spent: float = (df_quantities_buy * df_prices_buy).sum()
 
         # Récupération des prix et des quantités à vendre ==> Montant encaissé suite aux ventes
-        df_quantities_sell: pd.Series = current_quantity[list_sell]
+        # Pour les ventes : il faut récupérer les quantités de t-1 et non t (0 en t, positif en t-1)
+        prec_quantity = self.df_quantities.iloc[current_date_index-1, :]
+        df_quantities_sell: pd.Series = prec_quantity[list_sell]
         df_prices_sell: pd.Series = current_prices[list_sell]
         amount_received: float = (df_quantities_sell * df_prices_sell).sum()
 
@@ -405,44 +404,59 @@ class Portfolio:
         # Récupération des prix et des quantités à short ==> Montant encaissé suite au short (bloqué / placé)
         df_quantities_short: pd.Series = current_quantity[list_short]
         df_prices_short: pd.Series = current_prices[list_short]
-        cash_received: float = (-df_quantities_short * df_prices_short).sum()
+        cash_received: float = (np.abs(df_quantities_short) * df_prices_short).sum()
 
         # Récupération des prix et des quantités des tickers pour lesquels on clos le short
-        df_quantities_close_short: pd.Series = current_quantity[list_close_short]
-        df_prices_close_short: pd.Series = current_prices[list_close_short]
-        cash_spent: float = (-df_quantities_close_short * df_prices_close_short).sum()
+        current_prices_for_close: pd.DataFrame = self.df_prices.iloc[current_date_index,:]
+        df_prices_for_close = current_prices_for_close[list_close_short]
+        df_prec_quantities = self.df_quantities.iloc[current_date_index -1, :]
+        quantities_to_buy_back = abs(df_prec_quantities[list_close_short])
+        cash_spent = (quantities_to_buy_back * df_prices_for_close).sum()
+
+        # df_quantities_close_short: pd.Series = current_quantity[list_close_short]
+        # df_prices_close_short: pd.Series = current_prices[list_close_short]
+        # cash_spent: float = (np.abs(df_quantities_close_short) * df_prices_close_short).sum()
 
         # Mise à jour de la poche short du compte cash
         delta_cash_short: float = cash_received - cash_spent
         self.cash_short += delta_cash_short
 
-    # Méthode pour calculer l'historique des transactions
+    def _check_and_reduce_exposure(self, current_date: datetime, bool_long_only: bool = False):
+        """Réduit l'exposition si elle dépasse le levier autorisé"""
+        if bool_long_only:
+            leverage = 1
+            current_exposure = self._compute_exposition(current_date, bool_long_only)
+        else:
+            leverage = self.leverage
+            current_exposure = self._compute_exposition(current_date, bool_long_only)
 
-    """
-            # Boucle pour chaque tickers de l'univers
-        for i in range(df_operations.shape[1]):
+        if current_exposure > leverage:
+            # Calculer le facteur de réduction
+            reduction_factor = leverage / current_exposure
+            # Réduire toutes les positions proportionnellement
 
-            # Récupération du poids précédent et du poids actuel
-            prec_quantity: int = df_prec_quantities[i]
-            current_quantity: int = df_current_quantities[i]
-
-            # Premier cas : prec < 0 et actuel = 0 (=> Close Short)
-            if current_quantity == 0 and prec_quantity < 0:
-                df_operations.iloc[1,i] = "Close Short"
-
-            # Deuxième cas : actuel > prec (=> Buy)
-            elif current_quantity > prec_quantity:
-                df_operations.iloc[1,i] = "Buy"
-
-            # Troisième cas : prec > 0 et actuel = 0 (= vente)
-            elif current_quantity == 0 and prec_quantity > 0:
-                df_operations.iloc[1,i] = "Sell"
-
-            # Quatrième cas : prec = 0 et actuel < 0 (= short)
-            elif current_quantity < 0 and prec_quantity == 0:
-                df_operations.iloc[1,i] = "Short"
-
-            # Autre cas : rien
+            self.df_positions.loc[current_date, :] *= reduction_factor
+            if bool_long_only:
+                self.df_quantities_long.loc[current_date, :] = (
+                        self.df_quantities_long.loc[current_date, :] * reduction_factor
+                ).astype(int)
             else:
-                df_operations.iloc[1,i] = "Hold"
-    """
+                self.df_quantities.loc[current_date, :] = (
+                    self.df_quantities.loc[current_date, :] * reduction_factor
+                ).astype(int)
+
+    def rescale_weights_long_short(self, list_weights:list, target_gross_exposure: float = 1.0) -> list:
+        """
+        Rescaling pour garantir à chaque période que la somme des poids en LS est égale à 1
+        """
+        # Calcul de l'exposition brute actuelle en % (ex : 5 secteurs ==> 1000% d'expo, 100% par secteur)
+        gross_exposure = sum(abs(w) for w in list_weights)
+
+        # Vérfication pour ne pas diviser par 0
+        if gross_exposure == 0:
+            return [0.0 for _ in list_weights]
+
+        # Appliquer le facteur de rescaling
+        scale_factor = target_gross_exposure / gross_exposure
+        rescaled_weights = [w * scale_factor for w in list_weights]
+        return rescaled_weights
