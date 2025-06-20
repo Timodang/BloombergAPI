@@ -97,17 +97,17 @@ class Portfolio:
         self.df_positions: pd.DataFrame = pd.DataFrame(0.0, index=self.df_valo.index,
                                                columns=self.df_valo.columns)
 
-        # Positions (quantités) à à chaque date
+        # Quantités à chaque date pour le portefeuille LS et Long Only
         self.df_quantities: pd.DataFrame = self.df_positions.copy()
+        self.df_quantities_long: pd.DataFrame = self.df_quantities.copy()
 
-        # NAV du portefeuille à chaque date
+        # NAV du portefeuille à chaque date / NAV du portefeuille Long Only
         self.df_nav: pd.DataFrame = pd.DataFrame(0, index = self.df_valo.index, columns = ["NAV"])
+        self.df_nav_long: pd.DataFrame = self.df_nav.copy()
 
         # Exposition brute
         self.df_exposition:pd.DataFrame = pd.DataFrame(0, index = self.df_valo.index, columns = ["Exposition Brute"])
-
-        # Instanciation d'un dataframe pour stocker les trades
-        self.trade_historic: pd.DataFrame = pd.DataFrame(columns = self.df_prices.columns)
+        self.df_exposition_long: pd.DataFrame = self.df_exposition.copy()
 
     def run_backtest(self):
         """
@@ -139,6 +139,7 @@ class Portfolio:
 
         # Calcul de la NAV à la première période (= capital de la stratégie Deep Value)
         self.df_nav.iloc[index_start_date-1] = self.capital
+        self.df_nav_long.iloc[index_start_date-1] = self.capital
 
         # Boucle sur les périodes
         for idx in range(index_start_date, nb_periods):
@@ -161,22 +162,30 @@ class Portfolio:
             # Récupération des positions de la période et de la NAV de début de période
             current_positions = self.df_positions.iloc[idx, :]
 
-            # Calcul des quantités
+            # Calcul des quantités (portefeuille LS et Long Only)
             self.df_quantities.iloc[idx, :] = self.compute_quantity(current_positions, prec_prices, current_nav)
+            self.df_quantities_long.iloc[idx, :] = self.compute_quantity(current_positions, prec_prices, current_nav, bool_long_only=True)
 
             # Mise à jour du compte cash
             self._compute_operations(idx)
 
             # Calcul de la NAV de fin de période (==> NAV de la période suivante)
             self.df_nav.iloc[idx] = self._compute_nav(current_date)
+            self.df_nav_long.iloc[idx] = self._compute_nav(current_date, bool_long_only=True)
 
             # Calcul de l'exposition brute
             self.df_exposition.iloc[idx] = self._compute_exposition(current_date)
+            self.df_exposition_long.iloc[idx] = self._compute_exposition(current_date, bool_long_only=True)
 
         # Seules les données à partir de la date de début de la stratégie sont conservées
         self.df_positions = self.df_positions.iloc[index_start_date:, ]
         self.df_quantities = self.df_quantities.iloc[index_start_date:, :]
         self.df_nav = self.df_nav.iloc[index_start_date:, :]
+        self.df_exposition = self.df_exposition.iloc[index_start_date:,:]
+
+        self.df_quantities_long = self.df_quantities_long.iloc[index_start_date:, :]
+        self.df_nav_long = self.df_nav_long.iloc[index_start_date:, :]
+        self.df_exposition_long = self.df_exposition_long.iloc[index_start_date:,:]
 
     def _compute_portfolio_position(self, current_date: datetime) -> (list,int):
         """
@@ -229,17 +238,31 @@ class Portfolio:
         # Retour de la liste des poids pour l'ensemble du portefeuille
         return list_weights_ptf, nb_sect_buy
 
-    def compute_quantity(self, current_positions: pd.DataFrame, prec_prices: pd.DataFrame, current_nav:float)->list:
+    def compute_quantity(self, current_positions: pd.DataFrame, prec_prices: pd.DataFrame, current_nav:float,
+                         bool_long_only:bool = False)->list:
         """
         Méthode permettant de passer des poids aux quantités
         :param current_positions:
         :param prec_prices:
-        :param current_nav:
         :return:
         """
 
         # récupération des poids et des prix de la période précédente
         weights: pd.Series = pd.Series(current_positions, dtype=float).astype(float)
+
+        # Cas où le calcul est réalisé pour la jambe longue
+        if bool_long_only:
+
+            # Tous les poids négatifs sont annulés
+            weights = weights.clip(lower = 0)
+
+            # Calcul de la somme des poids (= nombre de portefeuille sur lesquels on est actuellement long)
+            sum_weights: float = np.sum(weights)
+
+            # Rescaling (=> poids normalisés à 100)
+            weights = weights / sum_weights
+
+        # Récupération des prix
         prices: pd.Series = pd.Series(prec_prices, dtype=float).astype(float)
 
         # Montant à investir par actif (=> poids * part de la NAV allouée au secteur)
@@ -289,35 +312,43 @@ class Portfolio:
         # Mise à jour de l'historique des trades
 
     # Méthode pour calculer la NAV
-    def _compute_nav(self, current_date:datetime)->float:
+    def _compute_nav(self, current_date:datetime, bool_long_only: bool = False)->float:
         """
         Méthode permettant de calculer la NAV actuel
         :return:
         """
-
-        # Récupération des quantités de titre pour chaque actifs détenus en t
-        current_quantities: pd.DataFrame = self.df_quantities.loc[current_date, :]
-
         # Récupération des prix
         current_prices: pd.DataFrame = self.df_prices.loc[current_date, :]
+
+        if bool_long_only:
+            # Récupération des quantités de titre pour chaque actifs détenus en t
+            current_quantities: pd.DataFrame = self.df_quantities_long.loc[current_date, :]
+            cash: float = self.cash_long
+        else:
+            # Récupération des quantités de titre pour chaque actifs détenus en t
+            current_quantities: pd.DataFrame = self.df_quantities.loc[current_date, :]
+            cash: float = self.cash_long + self.cash_short
 
         # Calcul de la valeur du portefeuille à la fin de la date actuelle (eop)
         ptf_value: float = (current_quantities.values * current_prices.values).sum()
 
         # Calcul de la nav (valeur du ptf + montant sur le compte de cash long, cash short bloqué)
-        nav: float = ptf_value + self.cash_long + self.cash_short
+        nav: float = ptf_value + self.cash_long + cash
         return nav
 
     # Méthode permettant de calculer l'exposition brute par date
-    def _compute_exposition(self, current_date:datetime):
+    def _compute_exposition(self, current_date:datetime, bool_long_only: bool = False):
         """
         Méthode permettant de calculer l'exposition brute du portefeuille
         :param current_date:
         :return:
         """
-
-        # Récupération des quantités en t
-        current_quantities:pd.DataFrame = self.df_quantities.loc[current_date,:]
+        if bool_long_only:
+            # Récupération des quantités de titre pour chaque actifs détenus en t
+            current_quantities: pd.DataFrame = self.df_quantities_long.loc[current_date, :]
+        else:
+            # Récupération des quantités de titre pour chaque actifs détenus en t
+            current_quantities: pd.DataFrame = self.df_quantities.loc[current_date, :]
 
         # Récupération des prix en t
         current_prices: pd.DataFrame = self.df_prices.loc[current_date,:]

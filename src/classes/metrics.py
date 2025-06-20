@@ -159,7 +159,7 @@ class Metrics:
         sharpe: float = self.compute_sharpe_ratio()
         downside_vol: float = dict_downside_vol["daily downside vol"]
         monthly_downside_vol: float = dict_downside_vol["monthly downside vol"]
-        ann_downside_vol: float = dict_downside_vol["annualizedd downside vol"]
+        ann_downside_vol: float = dict_downside_vol["annualized downside vol"]
         sortino: float = self.compute_sortino()
         mdd:float = self.compute_max_draw_down()
         var: float = self.compute_historical_var()

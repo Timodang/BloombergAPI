@@ -135,11 +135,11 @@ class Strategy:
         return 'neutral'
 
     def get_sector_weights(
-        self,
-        sector: str,
-        current_date: datetime.datetime,
-        action: str,
-        existing_positions: Optional[pd.DataFrame] = None
+            self,
+            sector: str,
+            current_date: datetime.datetime,
+            action: str,
+            existing_positions: Optional[pd.DataFrame] = None
     ) -> pd.DataFrame:
         """
         Retourne un DataFrame ['ticker','weight'] selon l'action :
@@ -149,21 +149,35 @@ class Strategy:
         """
         # Aucun changement
         if action == 'neutral':
-            return existing_positions.copy() if existing_positions is not None else pd.DataFrame(columns=['ticker','weight'])
-        # Sortie du secteur
-        if action == 'sell':
-            if existing_positions is None:
-                return pd.DataFrame(columns=['ticker','weight'])
-            df = existing_positions.copy()
-            df['weight'] = 0.0
+            # Conserver les positions existantes, mais annuler celles qui ne sont plus valides
+            df = existing_positions.copy() if existing_positions is not None else pd.DataFrame(
+                columns=['ticker', 'weight'])
+
+            if not df.empty:
+                # Récupérer la composition Russell à la date
+                if current_date in self.universe.index:
+                    uni = self.universe.loc[current_date]
+                    valid_tickers = set(uni[uni == 1].index)
+                else:
+                    valid_tickers = set()
+                # filtrer également le secteur
+                sector_tickers = set(self.dict_sectors[sector].columns)
+                # Parcourir et mettre à zéro les poids invalides
+                df['weight'] = df.apply(
+                    lambda row: row['weight'] if (
+                                row['ticker'] in valid_tickers and row['ticker'] in sector_tickers) else 0.0,
+                    axis=1
+                )
             return df
+
         # Entrée / ajustement de la position
         signals = self._generate_sector_signals(sector, current_date)
         if not signals:
-            return pd.DataFrame(columns=['ticker','weight'])
-                # Délégation au WeightingScheme
+            return pd.DataFrame(columns=['ticker', 'weight'])
+
+        # Délégation au WeightingScheme
         signal_series = pd.Series(signals)
-        weights_list  = self.scheme.compute_weights(signal_series)
+        weights_list = self.scheme.compute_weights(signal_series)
         # Construction du DataFrame final
         return pd.DataFrame({'ticker': list(signals.keys()), 'weight': weights_list})
 
