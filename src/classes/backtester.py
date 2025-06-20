@@ -49,7 +49,7 @@ class Portfolio:
 
         # récupération des prix et de la métrique de valorisation
         self.df_valo: pd.DataFrame = df_val
-        self.df_prices: pd.DataFrame = df_prices
+        self.df_prices: pd.DataFrame = df_prices.fillna(0)
 
         # Récupération de la composition de l'univers d'investissement et du benchmark
         self.universe: pd.DataFrame = universe
@@ -146,43 +146,39 @@ class Portfolio:
             # récupération de la date courante
             current_date: datetime = list_date[idx]
 
+            # Début de la récupération pour la date
+            print(f"Application de la stratégie pour la date {current_date}")
+
             # Récupération des prix de la période précédentes
             prec_prices =  self.df_prices.iloc[idx-1, :]
 
-            # Cas particulier : première date
-            if idx == index_start_date:
-                # Mise en place de la stratégie par portefeuille
-                self.df_positions[idx, :] = self._compute_portfolio_position(current_date)
-
-            else:
-                # Mise à jour des poids pour l'ensemble des actifs
-                self.df_positions[idx, :] = self._compute_portfolio_position(current_date)
+            # Récupération des poids
+            self.df_positions.iloc[idx, :], nb_buy_sect = self._compute_portfolio_position(current_date)
 
             # NAV de début de période (utilisée pour le calcul des quantités) = NAV de fin de période précédente
-            current_nav: float = self.df_nav[idx-1]
+            current_nav: float = self.df_nav.iloc[idx-1]['NAV']
 
             # Récupération des positions de la période et de la NAV de début de période
-            current_positions = self.df_positions[idx, :]
+            current_positions = self.df_positions.iloc[idx, :]
 
             # Calcul des quantités
-            self.df_quantities[idx, :] = self.compute_quantity(current_positions, prec_prices, current_nav)
+            self.df_quantities.iloc[idx, :] = self.compute_quantity(current_positions, prec_prices, current_nav)
 
             # Mise à jour du compte cash
-            self._compute_operations(current_date)
+            self._compute_operations(idx)
 
             # Calcul de la NAV de fin de période (==> NAV de la période suivante)
-            self.df_nav[idx] = self._compute_nav(current_date)
+            self.df_nav.iloc[idx] = self._compute_nav(current_date)
 
             # Calcul de l'exposition brute
-            self.df_exposition[idx] = self._compute_exposition(current_date)
-
+            self.df_exposition.iloc[idx] = self._compute_exposition(current_date)
 
         # Seules les données à partir de la date de début de la stratégie sont conservées
         self.df_positions = self.df_positions.iloc[index_start_date:, ]
-        self.df_quantities = self.df_quantities.iloc[index_start_date, :]
-        self.df_nav = self.df_nav.iloc[index_start_date, :]
+        self.df_quantities = self.df_quantities.iloc[index_start_date:, :]
+        self.df_nav = self.df_nav.iloc[index_start_date:, :]
 
-    def _compute_portfolio_position(self, current_date: datetime) -> list:
+    def _compute_portfolio_position(self, current_date: datetime) -> (list,int):
         """
         Méthode adaptée pour utiliser la nouvelle interface Strategy
         qui retourne des actions string et des DataFrames
@@ -194,6 +190,9 @@ class Portfolio:
         # Liste pour stocker les poids du portefeuille global
         list_weights_ptf: list = [0] * self.df_valo.shape[1]
 
+        # Nombre de secteurs sur lesquels des positions ont été prises au cours de la période
+        nb_sect_buy:int = 0
+
         # Boucle par secteur
         for sector, df_valo_sector in self.dict_sectors.items():
 
@@ -202,6 +201,8 @@ class Portfolio:
 
             # Étape 1 : Obtenir l'action à prendre ('buy', 'sell', ou 'neutral')
             action = self.strategy_instance.should_take_position(sector, current_date)
+            if action == "buy":
+                nb_sect_buy+=1
 
             # Étape 2 : Obtenir le DataFrame des positions pour ce secteur
             sector_positions_df = self.strategy_instance.get_sector_weights(
@@ -226,7 +227,7 @@ class Portfolio:
                         list_weights_ptf[ticker_index] = weight
 
         # Retour de la liste des poids pour l'ensemble du portefeuille
-        return list_weights_ptf
+        return list_weights_ptf, nb_sect_buy
 
     def compute_quantity(self, current_positions: pd.DataFrame, prec_prices: pd.DataFrame, current_nav:float)->list:
         """
@@ -238,31 +239,30 @@ class Portfolio:
         """
 
         # récupération des poids et des prix de la période précédente
-        weights: pd.Series = pd.Series(current_positions, dtype=float)
-        prices: pd.Series = pd.Series(prec_prices, dtype=float)
+        weights: pd.Series = pd.Series(current_positions, dtype=float).astype(float)
+        prices: pd.Series = pd.Series(prec_prices, dtype=float).astype(float)
 
         # Montant à investir par actif (=> poids * part de la NAV allouée au secteur)
         amount_by_asset: pd.Series = weights * current_nav * self.amount_per_sector
 
         # Calcul des quantités (arrondis à l'entier inférieur pour ne pas détenir de fraction d'action)
-        quantities: list = [np.floor(amount_by_asset.values / prices.values).fillna(0).astype(int)]
+        quantities: np.array = np.nan_to_num(amount_by_asset.values / prices.values, nan = 0.0)
+        list_quantities: list = np.floor(quantities).astype(int).tolist()
+        # quantities: list = [np.floor(amount_by_asset.values / prices.values).fillna(0).astype(int)]
 
         # Récupération des quantités
-        return quantities
+        return list_quantities
 
     # Méthode pour maj le compte cash
-    def _compute_operations(self, current_date:datetime):
+    def _compute_operations(self, current_date_idx:int):
         """
         Méthode permettant de mettre à jour le compte cash de la stratégie
         :return:
         """
 
         # Récupération des quantités de titres détenues sur la période et des quantités de titres détenues sur la période précédente
-        df_current_quantities: pd.DataFrame = self.df_quantities.loc[current_date,:]
-        df_prec_quantities: pd.DataFrame = self.df_quantities.loc[current_date-1,:]
-
-        # Création d'un dataframe pour stocker les 4 étapes possibles : Long, Sell, Short, Close Short, Hold
-        df_operations: pd.DataFrame = pd.DataFrame(0, columns= self.df_quantities.columns)
+        df_current_quantities: pd.DataFrame = self.df_quantities.iloc[current_date_idx,:]
+        df_prec_quantities: pd.DataFrame = self.df_quantities.iloc[current_date_idx-1,:]
 
         # Premier cas : prec < 0 et actuel = 0 ==> récupération des poids
         close_short_idx = (df_prec_quantities < 0) & (df_current_quantities == 0)
@@ -281,8 +281,10 @@ class Portfolio:
         tickers_short:list = df_current_quantities[short_idx].index.tolist()
 
         # Mise à jour du compte de cash long
+        self._update_long_account(tickers_long, tickers_sell, current_date_idx)
 
         # Mise à jour du compte de cash short
+        self._update_short_account(tickers_short, tickers_close_short, current_date_idx)
 
         # Mise à jour de l'historique des trades
 
@@ -303,7 +305,7 @@ class Portfolio:
         ptf_value: float = (current_quantities.values * current_prices.values).sum()
 
         # Calcul de la nav (valeur du ptf + montant sur le compte de cash long, cash short bloqué)
-        nav: float = ptf_value + self.cash_long
+        nav: float = ptf_value + self.cash_long + self.cash_short
         return nav
 
     # Méthode permettant de calculer l'exposition brute par date
@@ -324,7 +326,7 @@ class Portfolio:
         current_nav: float = self.df_nav.loc[current_date, :]
 
         # Calcul de l'exposition brute du portefeuille
-        exposition: float = (current_quantities.values * current_prices.values).sum()/current_nav
+        exposition: float = np.sum(np.abs(current_quantities.values * current_prices.values)) / current_nav
         return exposition
 
     # Méthode pour mettre à jour le compte de cash pour la poche longue
@@ -372,12 +374,12 @@ class Portfolio:
         # Récupération des prix et des quantités à short ==> Montant encaissé suite au short (bloqué / placé)
         df_quantities_short: pd.Series = current_quantity[list_short]
         df_prices_short: pd.Series = current_prices[list_short]
-        cash_received: float = (df_quantities_short * df_prices_short).sum()
+        cash_received: float = (-df_quantities_short * df_prices_short).sum()
 
         # Récupération des prix et des quantités des tickers pour lesquels on clos le short
         df_quantities_close_short: pd.Series = current_quantity[list_close_short]
         df_prices_close_short: pd.Series = current_prices[list_close_short]
-        cash_spent: float = (df_quantities_close_short * df_prices_close_short).sum()
+        cash_spent: float = (-df_quantities_close_short * df_prices_close_short).sum()
 
         # Mise à jour de la poche short du compte cash
         delta_cash_short: float = cash_received - cash_spent

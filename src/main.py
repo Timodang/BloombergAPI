@@ -7,6 +7,8 @@ from pandas import read_excel
 from src.classes.data import Data
 from src.classes.utilitaire import Utils
 from src.classes.backtester import Portfolio
+from src.classes.metrics import Metrics
+from src.classes.visualization import Visualisation
 
 # Pip install pour blpapi (à mettre dans un notebook)
 # pip install --index-url=https://blpapi.bloomberg.com/repository/releases/python/simple blpapi
@@ -73,12 +75,15 @@ ptf:Portfolio = Portfolio(df_val=df_valo,
 # Exécution du backtest
 ptf.run_backtest()
 
-# Récupération des quantités date / date et des NAV
-
 
 """
 Troisième étape : Etude des performances
 """
+nav_for_perf: pd.Series = ptf.df_nav["NAV"]
+
+# Initialisation du module de métrique
+metriques: Metrics = Metrics(nav_for_perf, "discret", frequency="daily")
+perf_stats_ptf: pd.DataFrame = metriques.display_stats("Deep Value")
 
 """
 Quatrième étape : Export pour Bloomberg
